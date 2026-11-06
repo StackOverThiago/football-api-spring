@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Football App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --pitch: #228F45;
+            --pitch-stripe: #269A4B;
+            --ink: #000;
+            --paper: #fff;
+            --paper-tint: #F1F8F3;
+            --rule: #DCE9DF;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "Barlow", system-ui, sans-serif;
+            color: var(--ink);
+            min-height: 100vh;
+            padding: 28px 20px 48px;
+            background: repeating-linear-gradient(90deg, var(--pitch) 0 90px, var(--pitch-stripe) 90px 180px);
+        }
+        main { max-width: 860px; margin: 0 auto; }
+        h1 {
+            font-family: "Barlow Condensed", sans-serif;
+            font-weight: 700;
+            font-size: clamp(40px, 8vw, 64px);
+            line-height: 1;
+            margin-bottom: 20px;
+        }
+        .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .controls.sections { margin-bottom: 10px; }
+        button {
+            font: inherit;
+            font-weight: 500;
+            color: var(--ink);
+            background: var(--paper);
+            border: 2px solid var(--ink);
+            border-radius: 999px;
+            padding: 7px 16px;
+            cursor: pointer;
+        }
+        .sections button { font-weight: 600; padding: 9px 22px; }
+        button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+        button:focus-visible { outline: 3px solid var(--paper); outline-offset: 2px; }
+
+        .card {
+            margin-top: 22px;
+            background: var(--paper);
+            border-radius: 12px;
+            overflow: hidden;
+            outline: 3px solid var(--paper);
+            outline-offset: 6px;
+        }
+        .card-header {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            padding: 16px 20px 12px;
+            background: var(--paper-tint);
+            border-bottom: 1px solid var(--rule);
+        }
+        .card-header h2 {
+            font-family: "Barlow Condensed", sans-serif;
+            font-weight: 700;
+            font-size: 30px;
+            line-height: 1;
+        }
+        .card-header span { font-size: 15px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 15px; }
+        th {
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--rule);
+            white-space: nowrap;
+        }
+        td { padding: 13px 20px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr:hover { background: var(--paper-tint); }
+        .num { text-align: right; }
+        th.num { text-align: right; }
+        .strong { font-weight: 600; }
+        .pos {
+            display: inline-grid;
+            place-items: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--ink);
+            color: var(--paper);
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .team { display: flex; align-items: center; gap: 10px; }
+        .crest { width: 22px; height: 22px; object-fit: contain; }
+        .vs { text-align: center; }
+        .msg { padding: 36px 20px; text-align: center; font-size: 16px; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>⚽ Football App</h1>
+    <div class="controls sections" id="sections"></div>
+    <div class="controls" id="leagues"></div>
+    <div id="content"></div>
+</main>
+
+<script>
+    const sections = ["Standings", "Scorers", "Fixtures"];
+    const leagues = [
+        ["Premier League", "PL"], ["La Liga", "PD"], ["Bundesliga", "BL1"],
+        ["Serie A", "SA"], ["Ligue 1", "FL1"], ["Eredivisie", "DED"],
+        ["Primeira Liga", "PPL"], ["Championship", "ELC"], ["Brazilian Serie A", "BSA"]
+    ];
+    let section = "Standings";
+    let league = leagues[0];
+    let requestId = 0;
+
+    function buildButtons(containerId, items, isActive, onClick) {
+        const el = document.getElementById(containerId);
+        el.innerHTML = "";
+        items.forEach(item => {
+            const b = document.createElement("button");
+            b.textContent = Array.isArray(item) ? item[0] : item;
+            b.setAttribute("aria-pressed", isActive(item));
+            b.onclick = () => { onClick(item); render(); };
+            el.appendChild(b);
+        });
+    }
+
+    function card(title, note, head, rows) {
+        return `<div class="card">
+        <div class="card-header"><h2>${title}</h2><span>${note}</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr>${head.join("")}</tr></thead>
+          <tbody>${rows.join("")}</tbody>
+        </table></div></div>`;
+    }
+
+    async function getJson(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+    }
+
+    async function load() {
+        const code = league[1];
+
+        if (section === "Standings") {
+            const data = await getJson(`/api/standings/${code}/top`);
+            return card(league[0], "Top 4",
+                ["<th>#</th>", "<th>Team</th>", '<th class="num">Pts</th>', '<th class="num">Pld</th>', '<th class="num">W</th>', '<th class="num">GD</th>'],
+                data.map(r => `<tr>
+            <td><span class="pos">${r.position}</span></td>
+            <td><div class="team"><img class="crest" src="${r.team.crest}" alt="">${r.team.name}</div></td>
+            <td class="num strong">${r.points}</td>
+            <td class="num">${r.playedGames}</td>
+            <td class="num">${r.won}</td>
+            <td class="num">${r.goalDifference > 0 ? "+" : ""}${r.goalDifference}</td>
+          </tr>`));
+        }
+
+        if (section === "Scorers") {
+            const data = await getJson(`/api/scorers/${code}/top`);
+            return card(league[0], "Top scorers",
+                ["<th>#</th>", "<th>Player</th>", "<th>Team</th>", '<th class="num">Goals</th>', '<th class="num">Assists</th>'],
+                data.map((s, i) => `<tr>
+            <td><span class="pos">${i + 1}</span></td>
+            <td class="strong">${s.player.name}</td>
+            <td>${s.team.name}</td>
+            <td class="num strong">${s.goals ?? "-"}</td>
+            <td class="num">${s.assists ?? "-"}</td>
+          </tr>`));
+        }
+
+        const data = await getJson(`/api/fixtures/${code}`);
+        if (!data.length) return '<div class="card"><div class="msg">No upcoming fixtures found for this league.</div></div>';
+        return card(league[0], "Upcoming fixtures",
+            ["<th>Date</th>", "<th>Home</th>", "<th></th>", "<th>Away</th>"],
+            data.map(m => {
+                const d = new Date(m.utcDate);
+                const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+                const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+                return `<tr>
+            <td>${day}, ${time}</td>
+            <td class="strong">${m.homeTeam.name}</td>
+            <td class="vs">vs</td>
+            <td class="strong">${m.awayTeam.name}</td>
+          </tr>`;
+            }));
+    }
+
+    async function render() {
+        buildButtons("sections", sections, s => s === section, s => section = s);
+        buildButtons("leagues", leagues, l => l[1] === league[1], l => league = l);
+        const content = document.getElementById("content");
+        const myId = ++requestId;
+        content.innerHTML = '<div class="card"><div class="msg">Loading…</div></div>';
+        try {
+            const html = await load();
+            if (myId === requestId) content.innerHTML = html;
+        } catch (e) {
+            if (myId === requestId) {
+                content.innerHTML = '<div class="card"><div class="msg">Couldn’t load this data. Check the server is running, then try again.</div></div>';
+            }
+        }
+    }
+
+    render();
+</script>
+</body>
+</html>
